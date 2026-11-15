@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 安全问题
+    url: https://github.com/GdeiAssistant/.github/security/advisories/new
+    about: 不要在公开 Issue 里报告安全漏洞，请使用 GitHub 私有漏洞报告。
+  - name: 社区讨论与主仓库
+    url: https://github.com/GdeiAssistant/GdeiAssistant
+    about: 业务功能或客户端问题请前往对应的 GdeiAssistant 项目仓库反馈。
