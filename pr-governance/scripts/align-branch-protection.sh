@@ -10,7 +10,7 @@ if [[ -z "$OWNER" ]]; then
   echo "Set ALIGN_OWNER or pass the account login as argv[1]" >&2
   exit 1
 fi
-HUB_REPOS="${ALIGN_SKIP_REPOS:-PrGovernance}"
+HUB_REPOS="${ALIGN_SKIP_REPOS:-PrGovernance .github}"
 
 BASE_CONTEXTS='Repository hygiene
 risk-gate
