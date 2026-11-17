@@ -12,7 +12,7 @@ Markdown 组织规范文档 + Python 3（`scripts/check_hygiene.py`、`scripts/c
 
 - `profile/README.md` — 组织 GitHub 主页文案。
 - `actions/` — `repository-hygiene`、`commitlint`、`artifact-secret-scan`、`dependabot-policy` 共享复合 Action。
-- `.github/` — 默认 Issue / PR 模板与 CI workflow。
+- `.github/` — 默认 Issue / PR 模板、`CODEOWNERS`、Copilot 指引、Dependabot 与 CI workflow。
 - `scripts/` — 卫生、工作流安全、产物扫描、Dependabot 策略脚本及其单元测试。
 - `CODE_OF_CONDUCT.md`、`NOTICE`、`TRADEMARK.md` — 组织级社区准则与归属基线。
 
@@ -21,6 +21,7 @@ Markdown 组织规范文档 + Python 3（`scripts/check_hygiene.py`、`scripts/c
 ```bash
 python3 -m unittest discover -s scripts -p "test_*.py"
 python3 scripts/check_hygiene.py --strict --require-coc
+python3 scripts/check_workflows.py
 node --test scripts/test-dependabot-policy.cjs
 actionlint -shellcheck= -pyflakes=
 ```
@@ -37,11 +38,11 @@ actionlint -shellcheck= -pyflakes=
 - 不要削弱 `.gitignore` 防泄露规则或提交真实账号、校园凭据与私有 ID。
 
 <!-- content-boundary:begin -->
-- 公开材料不出现真实资源名与账号，示例统一使用占位符或合成值。
+- 公开材料不出现真实云资源名、校园账号与内部凭据（GitHub 仓库 `CODEOWNERS` 路由句柄除外），示例统一使用占位符或合成值。
 - 判断一次改动是否干净看 `git diff` 和 `git ls-files`；`.gitignore` 只拦截未跟踪文件。
 <!-- content-boundary:end -->
 
 ## 提交与 PR
 
-- Commit 标题遵循英文 Conventional Commits（`feat`、`fix`、`docs`、`chore`、`ci`），不超过 72 字符。
+- Commit 标题遵循英文 Conventional Commits（`feat`、`fix`、`docs`、`refactor`、`test`、`chore`、`perf`、`ci`、`build`），不超过 72 字符。
 - 从 `origin/main` 分支开发，PR 描述按 `.github/pull_request_template.md` 写明改动、验证结果与风险。
