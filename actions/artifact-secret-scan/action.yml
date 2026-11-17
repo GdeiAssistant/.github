@@ -1,0 +1,32 @@
+name: Artifact secret scan
+description: Scan build artifact paths with verified Gitleaks 8.30.1 before upload.
+inputs:
+  paths:
+    description: Newline-separated file or directory paths or globs to scan
+    required: true
+  config:
+    description: Optional Gitleaks config path (defaults to the built-in config)
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    - name: Install verified Gitleaks
+      shell: bash
+      run: |
+        set -euo pipefail
+        bash "$GITHUB_ACTION_PATH/install-gitleaks.sh"
+
+    - name: Scan artifact paths for secrets
+      shell: bash
+      env:
+        ARTIFACT_PATHS: ${{ inputs.paths }}
+        GITLEAKS_CONFIG: ${{ inputs.config }}
+      run: |
+        set -euo pipefail
+        scripts_dir="$(cd "$GITHUB_ACTION_PATH/../../scripts" && pwd)"
+        args=(--gitleaks "$RUNNER_TEMP/gitleaks-bin/gitleaks")
+        if [[ -n "${GITLEAKS_CONFIG:-}" ]]; then
+          args+=(--config "$GITLEAKS_CONFIG")
+        fi
+        python3 "$scripts_dir/artifact_secret_scan.py" "${args[@]}"

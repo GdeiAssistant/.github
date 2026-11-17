@@ -1,0 +1,40 @@
+name: Dependabot policy
+description: Evaluate Dependabot pull request metadata against repository policy or merge verified updates.
+inputs:
+  mode:
+    description: Execution mode (metadata or merge)
+    required: true
+  config-path:
+    description: Path to dependabot-policy.json relative to the repository workspace
+    required: false
+    default: ".github/scripts/dependabot-policy.json"
+  dependencies:
+    description: JSON output from dependabot/fetch-metadata (required in metadata mode)
+    required: false
+    default: ""
+  github-token:
+    description: GitHub token used to query PR state and approve or merge verified updates
+    required: false
+    default: ""
+outputs:
+  eligible:
+    description: Whether the Dependabot pull request meets auto-merge policy
+    value: ${{ steps.run_policy.outputs.eligible }}
+runs:
+  using: composite
+  steps:
+    - name: Run Dependabot policy
+      id: run_policy
+      shell: bash
+      env:
+        POLICY_MODE: ${{ inputs.mode }}
+        DEPENDABOT_POLICY_CONFIG: ${{ inputs.config-path }}
+        DEPENDABOT_DEPENDENCIES: ${{ inputs.dependencies }}
+        INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: |
+        set -euo pipefail
+        if [[ -n "${INPUT_GITHUB_TOKEN:-}" ]]; then
+          export GH_TOKEN="$INPUT_GITHUB_TOKEN"
+        fi
+        scripts_dir="$(cd "$GITHUB_ACTION_PATH/../../scripts" && pwd)"
+        node "$scripts_dir/dependabot-policy.cjs" "$POLICY_MODE" --config "$DEPENDABOT_POLICY_CONFIG"

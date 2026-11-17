@@ -22,9 +22,27 @@ jobs:
           python-version: "3.13"
       - name: Install workflow checker dependency
         run: python3 -m pip install --disable-pip-version-check -r scripts/requirements-ci.txt
+      - name: Install verified Gitleaks
+        run: bash actions/artifact-secret-scan/install-gitleaks.sh
       - name: Run hygiene checker unit tests
-        run: python3 scripts/test_hygiene.py
+        run: python3 -m unittest discover -s scripts -p "test_hygiene.py"
       - name: Check repository hygiene
         run: python3 scripts/check_hygiene.py --strict --require-coc
       - name: Run workflow checker unit tests
         run: PYTHONPATH=scripts python3 -m unittest discover -s scripts -p "test_workflows.py"
+      - name: Check workflow safety
+        run: python3 scripts/check_workflows.py --skip-entry-check
+      - name: Run artifact secret scan unit tests
+        env:
+          GITLEAKS_BIN: ${{ runner.temp }}/gitleaks-bin/gitleaks
+        run: python3 -m unittest discover -s scripts -p "test_artifact_secret_scan.py"
+      - name: Run dependabot policy unit tests
+        run: node --test scripts/test-dependabot-policy.cjs
+      - name: Check workflow syntax
+        run: |
+          archive="$RUNNER_TEMP/actionlint.tar.gz"
+          curl --fail --silent --show-error --location --retry 2 \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz -o "$archive"
+          printf '%s  %s\n' '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8' "$archive" | sha256sum --check
+          tar -xzf "$archive" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint" -shellcheck= -pyflakes=
