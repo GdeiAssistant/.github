@@ -1,1 +1,6 @@
-* @Pigbibi
+# Responsibility routing; approval requirements are configured separately.
+/AGENTS.md @Pigbibi
+/CLAUDE.md @Pigbibi
+/.github/ @Pigbibi
+/actions/ @Pigbibi
+/scripts/ @Pigbibi

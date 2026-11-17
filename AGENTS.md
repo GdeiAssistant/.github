@@ -38,7 +38,7 @@ actionlint -shellcheck= -pyflakes=
 - 不要削弱 `.gitignore` 防泄露规则或提交真实账号、校园凭据与私有 ID。
 
 <!-- content-boundary:begin -->
-- 公开材料不出现真实资源名与账号，示例统一使用占位符或合成值。
+- 公开材料不出现真实云资源名、校园账号与内部凭据（GitHub 仓库 `CODEOWNERS` 路由句柄除外），示例统一使用占位符或合成值。
 - 判断一次改动是否干净看 `git diff` 和 `git ls-files`；`.gitignore` 只拦截未跟踪文件。
 <!-- content-boundary:end -->
 
