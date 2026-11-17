@@ -31,7 +31,7 @@ jobs:
       - name: Run workflow checker unit tests
         run: PYTHONPATH=scripts python3 -m unittest discover -s scripts -p "test_workflows.py"
       - name: Check workflow safety
-        run: python3 scripts/check_workflows.py --skip-entry-check
+        run: python3 scripts/check_workflows.py
       - name: Run artifact secret scan unit tests
         env:
           GITLEAKS_BIN: ${{ runner.temp }}/gitleaks-bin/gitleaks
