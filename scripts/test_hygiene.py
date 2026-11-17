@@ -148,6 +148,11 @@ class CheckHygieneTests(unittest.TestCase):
             priv = self._run_cli(repo, "--private")
             self.assertEqual(priv.returncode, 0, msg=priv.stdout + priv.stderr)
 
+            (repo / "SECURITY.md").unlink()
+            missing_sec = self._run_cli(repo, "--private")
+            self.assertEqual(missing_sec.returncode, 1)
+            self.assertIn("SECURITY.md", missing_sec.stdout)
+
             (repo / ".gitignore").write_text("*.pyc\n", encoding="utf-8")
             missing_gi = self._run_cli(repo, "--private")
             self.assertEqual(missing_gi.returncode, 1)
@@ -181,6 +186,11 @@ class CheckHygieneTests(unittest.TestCase):
 
             priv = self._run_cli(repo, "--private")
             self.assertEqual(priv.returncode, 0, msg=priv.stdout + priv.stderr)
+
+            (repo / "SECURITY.md").unlink()
+            missing_sec = self._run_cli(repo, "--private")
+            self.assertEqual(missing_sec.returncode, 1)
+            self.assertIn("SECURITY.md", missing_sec.stdout)
 
     def test_gitignored_local_notes_are_skipped_while_staged_notes_fail(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -230,9 +240,6 @@ class AgentInstructionsTest(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        hygiene.errors.clear()
-        hygiene.warnings.clear()
-        hygiene.doc_warnings.clear()
         self.git("init", "--quiet")
         (self.root / "AGENTS.md").write_text(
             "\n".join("## " + name for name in hygiene.AGENTS_SECTIONS)
@@ -246,20 +253,20 @@ class AgentInstructionsTest(unittest.TestCase):
 
     def test_ignored_local_files_are_not_a_delivery(self):
         (self.root / ".gitignore").write_text("AGENTS.md\nCLAUDE.md\n")
-        hygiene.check_agents(self.root)
-        self.assertTrue(any("AGENTS.md" in e for e in hygiene.errors))
-        self.assertTrue(any("CLAUDE.md" in e for e in hygiene.errors))
+        errors, _ = hygiene.check_agents(self.root)
+        self.assertTrue(any("AGENTS.md" in e for e in errors))
+        self.assertTrue(any("CLAUDE.md" in e for e in errors))
 
     def test_tracked_instructions_pass(self):
         self.git("add", "AGENTS.md", "CLAUDE.md")
-        hygiene.check_agents(self.root)
-        self.assertEqual(hygiene.errors, [])
+        errors, _ = hygiene.check_agents(self.root)
+        self.assertEqual(errors, [])
 
     def test_missing_claude_entry_is_reported(self):
         (self.root / "CLAUDE.md").unlink()
         self.git("add", "AGENTS.md")
-        hygiene.check_agents(self.root)
-        self.assertTrue(any("CLAUDE.md" in e for e in hygiene.errors))
+        errors, _ = hygiene.check_agents(self.root)
+        self.assertTrue(any("CLAUDE.md" in e for e in errors))
 
     def test_content_boundary_block_is_required(self):
         (self.root / "AGENTS.md").write_text(
@@ -267,23 +274,16 @@ class AgentInstructionsTest(unittest.TestCase):
             encoding="utf-8",
         )
         self.git("add", "AGENTS.md", "CLAUDE.md")
-        hygiene.check_agents(self.root)
-        self.assertTrue(any("content-boundary" in e for e in hygiene.errors))
+        errors, _ = hygiene.check_agents(self.root)
+        self.assertTrue(any("content-boundary" in e for e in errors))
 
     def test_git_metadata_is_required(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for name in ("AGENTS.md", "CLAUDE.md"):
                 (root / name).write_bytes((self.root / name).read_bytes())
-            hygiene.check_agents(root)
-            self.assertTrue(hygiene.errors)
-
-    def test_secret_diagnostic_does_not_print_the_value(self):
-        value = "ghp_" + "X" * 30
-        (self.root / "example.txt").write_text(value)
-        hygiene.check_secrets(self.root)
-        self.assertTrue(hygiene.errors)
-        self.assertNotIn(value[:12], "\n".join(hygiene.errors))
+            errors, _ = hygiene.check_agents(root)
+            self.assertTrue(errors)
 
 
 class LocaleSuffixTest(unittest.TestCase):
@@ -291,15 +291,12 @@ class LocaleSuffixTest(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        hygiene.errors.clear()
-        hygiene.warnings.clear()
-        hygiene.doc_warnings.clear()
 
     def check(self, name: str):
         path = self.root / name
         path.write_text("# Title\n", encoding="utf-8")
-        hygiene.check_filename(self.root, path)
-        return list(hygiene.errors)
+        errors, _ = hygiene.check_filename(self.root, path)
+        return errors
 
     def test_en_suffix_is_accepted(self):
         self.assertEqual(self.check("guide.en.md"), [])
@@ -319,9 +316,6 @@ class BilingualPairTest(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        hygiene.errors.clear()
-        hygiene.warnings.clear()
-        hygiene.doc_warnings.clear()
 
     def write(self, name: str, body: str):
         (self.root / name).write_text(body, encoding="utf-8")
@@ -329,20 +323,20 @@ class BilingualPairTest(unittest.TestCase):
     def test_missing_link_is_an_error(self):
         self.write("guide.md", "# Guide\n\nEnglish | [简体中文](guide.zh-CN.md)\n")
         self.write("guide.zh-CN.md", "# 指南\n\n中文正文。\n")
-        hygiene.check_bilingual_pair(self.root)
-        self.assertTrue(any("guide.md" in e for e in hygiene.errors))
+        errors, _ = hygiene.check_bilingual_pair(self.root)
+        self.assertTrue(any("guide.md" in e for e in errors))
 
     def test_mutual_links_pass(self):
         self.write("guide.md", "# Guide\n\nEnglish | [简体中文](guide.zh-CN.md)\n")
         self.write("guide.zh-CN.md", "# 指南\n\n[English](guide.md) | 简体中文\n")
-        hygiene.check_bilingual_pair(self.root)
-        self.assertEqual(hygiene.errors, [])
+        errors, _ = hygiene.check_bilingual_pair(self.root)
+        self.assertEqual(errors, [])
 
     def test_orphan_translation_warns_but_does_not_fail(self):
         self.write("guide.zh-CN.md", "# 指南\n\n[English](guide.md) | 简体中文\n")
-        hygiene.check_bilingual_pair(self.root)
-        self.assertEqual(hygiene.errors, [])
-        self.assertTrue(hygiene.warnings)
+        errors, warnings = hygiene.check_bilingual_pair(self.root)
+        self.assertEqual(errors, [])
+        self.assertTrue(warnings)
 
 
 class CommentLanguageTest(unittest.TestCase):
@@ -350,26 +344,19 @@ class CommentLanguageTest(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        hygiene.errors.clear()
-        hygiene.warnings.clear()
-        hygiene.doc_warnings.clear()
 
     def test_chinese_comment_warns_without_failing(self):
         (self.root / "module.py").write_text("# 这里等待重试\nvalue = 1\n", encoding="utf-8")
-        hygiene.check_comment_language(self.root)
-        self.assertEqual(hygiene.errors, [])
-        self.assertTrue(hygiene.warnings)
-        self.assertEqual(hygiene.doc_warnings, [])
+        warnings = hygiene.check_comment_language(self.root)
+        self.assertTrue(warnings)
 
     def test_chinese_string_literal_is_not_a_comment(self):
         (self.root / "module.py").write_text('MESSAGE = "重试失败"\n', encoding="utf-8")
-        hygiene.check_comment_language(self.root)
-        self.assertEqual(hygiene.warnings, [])
+        self.assertEqual(hygiene.check_comment_language(self.root), [])
 
     def test_english_comment_passes(self):
         (self.root / "module.py").write_text("# wait before retrying\nvalue = 1\n", encoding="utf-8")
-        hygiene.check_comment_language(self.root)
-        self.assertEqual(hygiene.warnings, [])
+        self.assertEqual(hygiene.check_comment_language(self.root), [])
 
 
 if __name__ == "__main__":

@@ -6,22 +6,23 @@
 
 ## 技术栈
 
-Markdown 组织规范文档 + Python 3（`scripts/check_hygiene.py`、`scripts/check_workflows.py`）+ GitHub Actions 复合 Action。
+Markdown 组织规范文档 + Python 3（`scripts/check_hygiene.py`、`scripts/check_workflows.py`、`scripts/artifact_secret_scan.py`）+ Node.js（`scripts/dependabot-policy.cjs`）+ GitHub Actions 复合 Action。
 
 ## 目录
 
 - `profile/README.md` — 组织 GitHub 主页文案。
-- `actions/` — `repository-hygiene` 与 `commitlint` 共享复合 Action。
+- `actions/` — `repository-hygiene`、`commitlint`、`artifact-secret-scan`、`dependabot-policy` 共享复合 Action。
 - `.github/` — 默认 Issue / PR 模板与 CI workflow。
-- `scripts/` — 文档、防泄露、工作流安全检查脚本及其单元测试。
+- `scripts/` — 卫生、工作流安全、产物扫描、Dependabot 策略脚本及其单元测试。
 - `CODE_OF_CONDUCT.md`、`NOTICE`、`TRADEMARK.md` — 组织级社区准则与归属基线。
 
 ## 本地验证
 
 ```bash
-python3 scripts/test_hygiene.py
+python3 -m unittest discover -s scripts -p "test_*.py"
 python3 scripts/check_hygiene.py --strict --require-coc
-PYTHONPATH=scripts python3 -m unittest discover -s scripts -p "test_workflows.py"
+node --test scripts/test-dependabot-policy.cjs
+actionlint -shellcheck= -pyflakes=
 ```
 
 ## 命名与文档

@@ -17,13 +17,6 @@ runs:
       with:
         python-version: '3.13'
 
-    - name: Verify hygiene checker regressions
-      shell: bash
-      run: |
-        set -euo pipefail
-        scripts_dir="$(cd "$GITHUB_ACTION_PATH/../../scripts" && pwd)"
-        python3 -m unittest discover -s "$scripts_dir" -p "test_hygiene.py"
-
     - name: Check versioned instructions and repository hygiene
       shell: bash
       env:
@@ -40,13 +33,6 @@ runs:
         set -euo pipefail
         scripts_dir="$(cd "$GITHUB_ACTION_PATH/../../scripts" && pwd)"
         python3 -m pip install --disable-pip-version-check -r "$scripts_dir/requirements-ci.txt"
-
-    - name: Verify workflow safety regressions
-      shell: bash
-      run: |
-        set -euo pipefail
-        scripts_dir="$(cd "$GITHUB_ACTION_PATH/../../scripts" && pwd)"
-        PYTHONPATH="$scripts_dir" python3 -m unittest discover -s "$scripts_dir" -p "test_workflows.py"
 
     - name: Check workflow safety
       shell: bash

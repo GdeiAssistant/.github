@@ -118,20 +118,6 @@ REQUIRED_OPEN_SOURCE = [
     ".github/pull_request_template.md",
 ]
 
-errors: list[str] = []
-warnings: list[str] = []
-doc_warnings: list[str] = []
-
-
-def err(msg: str) -> None:
-    errors.append(msg)
-
-
-def warn(msg: str, kind: str = "doc") -> None:
-    warnings.append(msg)
-    if kind == "doc":
-        doc_warnings.append(msg)
-
 
 def git_visible_files(root: Path) -> set[Path] | None:
     """Return tracked and unignored working-tree files when root is a Git checkout."""
@@ -217,48 +203,53 @@ def locale_error(locale: str) -> str | None:
     return f"locale suffix must be .zh-CN.md or .en.md, not .{locale}.md"
 
 
-def check_filename(root: Path, path: Path) -> None:
+def check_filename(root: Path, path: Path) -> tuple[list[str], list[str]]:
+    errors: list[str] = []
+    warnings: list[str] = []
     rel = path.relative_to(root)
     name = path.name
 
     if rel.parts and rel.parts[0] == ".github":
-        return
+        return errors, warnings
 
     stem, locale = split_locale(name) if name.endswith(".md") else (name, None)
     base = f"{stem}.md"
 
     if base in CONVENTIONAL_ANYWHERE:
         if base in CONVENTIONAL_ROOT_ONLY and rel.parent != Path("."):
-            warn(f"{rel}: {base} belongs at the repository root")
+            warnings.append(f"{rel}: {base} belongs at the repository root")
         if locale:
             msg = locale_error(locale)
             if msg:
-                err(f"{rel}: {msg}")
-        return
+                errors.append(f"{rel}: {msg}")
+        return errors, warnings
 
     if path.suffix not in {".md", ".yml", ".yaml"}:
-        return
+        return errors, warnings
 
     if stem != stem.lower():
-        err(f"{rel}: filename must be all lowercase")
+        errors.append(f"{rel}: filename must be all lowercase")
     if "_" in stem:
-        err(f"{rel}: join words with -, not _")
+        errors.append(f"{rel}: join words with -, not _")
     if " " in name:
-        err(f"{rel}: filename must not contain spaces")
+        errors.append(f"{rel}: filename must not contain spaces")
     if any(unicodedata.east_asian_width(c) in "WF" for c in name):
-        err(f"{rel}: filename must be ASCII")
+        errors.append(f"{rel}: filename must be ASCII")
 
     for pattern, reason in BANNED_PATTERNS:
         if pattern.search(stem):
-            err(f"{rel}: {reason}")
+            errors.append(f"{rel}: {reason}")
 
     if locale:
         msg = locale_error(locale)
         if msg:
-            err(f"{rel}: {msg}")
+            errors.append(f"{rel}: {msg}")
+
+    return errors, warnings
 
 
-def check_dirs(root: Path) -> None:
+def check_dirs(root: Path) -> list[str]:
+    errors: list[str] = []
     for p in sorted(root.rglob("*")):
         rel = p.relative_to(root)
         if any(part in SKIP_DIRS for part in rel.parts):
@@ -266,23 +257,27 @@ def check_dirs(root: Path) -> None:
         if p.is_dir() and BANNED_DIR.match(p.name):
             if is_untracked_gitignored(root, f"{rel.as_posix()}/"):
                 continue
-            err(f"{rel}/: do not split directories by phase, see section 1.3")
+            errors.append(f"{rel}/: do not split directories by phase, see section 1.3")
+    return errors
 
 
-def check_doc_type(root: Path, path: Path) -> None:
+def check_doc_type(root: Path, path: Path) -> list[str]:
     rel = path.relative_to(root)
     if any(part in FORBIDDEN_DOC_SKIP_DIRS for part in rel.parts[:-1]):
-        return
+        return []
     if FORBIDDEN_DOC.search(path.stem):
-        err(f"{rel}: audit / retrospective / handoff documents do not enter the repository, see section 2.2")
+        return [f"{rel}: audit / retrospective / handoff documents do not enter the repository, see section 2.2"]
+    return []
 
 
-def check_links(root: Path, path: Path) -> None:
+def check_links(root: Path, path: Path) -> tuple[list[str], list[str]]:
+    errors: list[str] = []
+    warnings: list[str] = []
     rel = path.relative_to(root)
     try:
         text = path.read_text(encoding="utf-8", errors="ignore")
     except OSError:
-        return
+        return errors, warnings
     cleaned = blank_code_spans(strip_fenced_blocks(text))
     for m in LINK_RE.finditer(cleaned):
         target = m.group(1)
@@ -290,13 +285,15 @@ def check_links(root: Path, path: Path) -> None:
             continue
         resolved = (path.parent / urllib.parse.unquote(target.split("#")[0])).resolve()
         if not resolved.is_relative_to(root):
-            warn(f"{rel}: cross-repository reference, not checked -> {target}")
+            warnings.append(f"{rel}: cross-repository reference, not checked -> {target}")
             continue
         if not resolved.exists():
-            err(f"{rel}: broken link -> {target}")
+            errors.append(f"{rel}: broken link -> {target}")
+    return errors, warnings
 
 
-def check_readme_quality(root: Path) -> None:
+def check_readme_quality(root: Path) -> list[str]:
+    errors: list[str] = []
     for name in ("README.md", "README.zh-CN.md"):
         path = root / name
         if not path.is_file():
@@ -306,9 +303,9 @@ def check_readme_quality(root: Path) -> None:
         prose = blank_code_spans(unfenced)
 
         for m in RE_PATCH_PROSE.finditer(prose):
-            err(f"{name}: PR-diff narration in README prose -> '{m.group(0)}'")
+            errors.append(f"{name}: PR-diff narration in README prose -> '{m.group(0)}'")
         for m in RE_PHASE_HEADING.finditer(prose):
-            err(f"{name}: phase-milestone heading in README -> '{m.group(0).strip()}'")
+            errors.append(f"{name}: phase-milestone heading in README -> '{m.group(0).strip()}'")
 
         seen_license = False
         for raw_line in unfenced.splitlines():
@@ -317,25 +314,30 @@ def check_readme_quality(root: Path) -> None:
                 seen_license = True
                 continue
             if seen_license and RE_H2_HEADING.match(stripped):
-                err(f"{name}: section placed after License/许可证 heading -> '{stripped}'")
+                errors.append(f"{name}: section placed after License/许可证 heading -> '{stripped}'")
+    return errors
 
 
-def check_public_internal_artifacts(root: Path, private: bool = False) -> None:
+def check_public_internal_artifacts(root: Path, private: bool = False) -> list[str]:
     if private:
-        return
+        return []
+    errors: list[str] = []
     if (root / "docs" / "changes").is_dir() and not is_untracked_gitignored(root, "docs/changes/"):
-        err("docs/changes/: internal change directory must not remain in a public repository")
+        errors.append("docs/changes/: internal change directory must not remain in a public repository")
     if (root / "docs" / "acceptance-policy.md").exists() and not is_untracked_gitignored(
         root, "docs/acceptance-policy.md"
     ):
-        err("docs/acceptance-policy.md: internal acceptance policy must not remain in a public repository")
+        errors.append("docs/acceptance-policy.md: internal acceptance policy must not remain in a public repository")
+    return errors
 
 
 HEAD_LINES = 15
 
 
-def check_bilingual_pair(root: Path) -> None:
+def check_bilingual_pair(root: Path) -> tuple[list[str], list[str]]:
     """When both languages exist, the two files link to each other near the top."""
+    errors: list[str] = []
+    warnings: list[str] = []
     for p in iter_files(root):
         if p.suffix != ".md":
             continue
@@ -345,7 +347,7 @@ def check_bilingual_pair(root: Path) -> None:
         base = p.with_name(f"{stem}.md")
         rel = p.relative_to(root)
         if not base.exists():
-            warn(f"{rel}: has a .{locale}.md version but no {base.name}; a single-language file needs no suffix")
+            warnings.append(f"{rel}: has a .{locale}.md version but no {base.name}; a single-language file needs no suffix")
             continue
         try:
             translated = "\n".join(p.read_text(encoding="utf-8", errors="ignore").split("\n")[:HEAD_LINES])
@@ -353,9 +355,10 @@ def check_bilingual_pair(root: Path) -> None:
         except OSError:
             continue
         if base.name not in translated:
-            err(f"{rel}: no link back to {base.name} near the top")
+            errors.append(f"{rel}: no link back to {base.name} near the top")
         if p.name not in original:
-            err(f"{base.relative_to(root)}: no link to {p.name} near the top")
+            errors.append(f"{base.relative_to(root)}: no link to {p.name} near the top")
+    return errors, warnings
 
 
 CJK_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]")
@@ -371,7 +374,7 @@ COMMENT_SYNTAX = {
 CODE_SKIP_DIRS = SKIP_DIRS | {"migrations", "testdata", "fixtures", "vendor", "third_party"}
 
 
-def check_comment_language(root: Path) -> None:
+def check_comment_language(root: Path) -> list[str]:
     """Comments are English; grandfathered backlog emits warnings."""
     offenders: list[tuple[str, int]] = []
     for p in iter_files(root):
@@ -398,15 +401,17 @@ def check_comment_language(root: Path) -> None:
         total = sum(n for _, n in offenders)
         offenders.sort(key=lambda x: -x[1])
         top = ", ".join(f"{f}({n})" for f, n in offenders[:5])
-        warn(f"{len(offenders)} files carry {total} lines of non-English comments; write new ones in English — worst: {top}", kind="code")
+        return [f"{len(offenders)} files carry {total} lines of non-English comments; write new ones in English — worst: {top}"]
+    return []
 
 
-def check_paragraphs(root: Path, path: Path) -> None:
+def check_paragraphs(root: Path, path: Path) -> list[str]:
+    warnings: list[str] = []
     rel = path.relative_to(root)
     try:
         text = path.read_text(encoding="utf-8", errors="ignore")
     except OSError:
-        return
+        return warnings
     in_code = False
     buf: list[str] = []
 
@@ -414,7 +419,7 @@ def check_paragraphs(root: Path, path: Path) -> None:
         if buf:
             n = len("".join(buf))
             if n > MAX_PARAGRAPH:
-                warn(f"{rel}: paragraph runs {n} characters, limit is {MAX_PARAGRAPH}")
+                warnings.append(f"{rel}: paragraph runs {n} characters, limit is {MAX_PARAGRAPH}")
             buf.clear()
 
     for line in text.split("\n"):
@@ -435,35 +440,38 @@ def check_paragraphs(root: Path, path: Path) -> None:
             continue
         buf.append(stripped)
     flush()
+    return warnings
 
 
-def check_agents(root: Path) -> None:
+def check_agents(root: Path) -> tuple[list[str], list[str]]:
+    errors: list[str] = []
+    warnings: list[str] = []
     if (root / ".github" / "engineering.md").exists() and not is_untracked_gitignored(
         root, ".github/engineering.md"
     ):
-        err(".github/engineering.md is retired; keep repository rules in AGENTS.md")
+        errors.append(".github/engineering.md is retired; keep repository rules in AGENTS.md")
 
     tracked = subprocess.run(
         ["git", "ls-files", "--cached", "-z", "--", "AGENTS.md", "CLAUDE.md"],
         cwd=root, capture_output=True, text=True, check=False,
     )
     if tracked.returncode:
-        err("cannot read Git tracking state; run this from the repository root")
+        errors.append("cannot read Git tracking state; run this from the repository root")
     else:
         names = set(tracked.stdout.split("\0"))
         for name in ("AGENTS.md", "CLAUDE.md"):
             if name not in names:
-                err(f"{name} is not tracked by Git; existing on disk does not mean committed")
+                errors.append(f"{name} is not tracked by Git; existing on disk does not mean committed")
 
     agents = root / "AGENTS.md"
     if not agents.exists():
-        err("AGENTS.md is missing")
-        return
+        errors.append("AGENTS.md is missing")
+        return errors, warnings
     lines = agents.read_text(encoding="utf-8", errors="ignore").split("\n")
     if len(lines) > MAX_AGENTS_LINES:
-        err(f"AGENTS.md has {len(lines)} lines, limit is {MAX_AGENTS_LINES}")
+        errors.append(f"AGENTS.md has {len(lines)} lines, limit is {MAX_AGENTS_LINES}")
     elif len(lines) > SOFT_AGENTS_LINES:
-        warn(f"AGENTS.md has {len(lines)} lines; keep it under {SOFT_AGENTS_LINES}")
+        warnings.append(f"AGENTS.md has {len(lines)} lines; keep it under {SOFT_AGENTS_LINES}")
 
     text = "\n".join(lines)
     zh_missing = [
@@ -476,96 +484,93 @@ def check_agents(root: Path) -> None:
     ]
     missing = en_missing if len(en_missing) < len(zh_missing) else zh_missing
     if missing:
-        err(f"AGENTS.md is missing sections: {', '.join(missing)}")
+        errors.append(f"AGENTS.md is missing sections: {', '.join(missing)}")
     if CONTENT_BOUNDARY not in text:
-        err("AGENTS.md is missing the content-boundary block")
+        errors.append("AGENTS.md is missing the content-boundary block")
 
     claude = root / "CLAUDE.md"
     if not claude.exists():
-        err("CLAUDE.md is missing; its content should be the single line @AGENTS.md")
+        errors.append("CLAUDE.md is missing; its content should be the single line @AGENTS.md")
     else:
         content = claude.read_text(encoding="utf-8", errors="ignore").strip()
         if content != "@AGENTS.md":
-            err("CLAUDE.md must be the single line @AGENTS.md, not a copy of the AGENTS.md body")
+            errors.append("CLAUDE.md must be the single line @AGENTS.md, not a copy of the AGENTS.md body")
+
+    return errors, warnings
 
 
-def check_gitignore(root: Path) -> None:
+def check_gitignore(root: Path) -> list[str]:
     gi = root / ".gitignore"
     if not gi.exists():
-        err(".gitignore is missing")
-        return
+        return [".gitignore is missing"]
+    errors: list[str] = []
     text = gi.read_text(encoding="utf-8", errors="ignore")
     missing = [pat for pat in REQUIRED_GITIGNORE_PATTERNS if pat not in text]
     if missing:
-        err(".gitignore is missing required anti-leak patterns: " + ", ".join(missing))
+        errors.append(".gitignore is missing required anti-leak patterns: " + ", ".join(missing))
     if re.search(r"^\s*!\s*/?\.github/engineering\.md\s*$", text, re.MULTILINE):
-        err(".gitignore still unignores retired .github/engineering.md")
+        errors.append(".gitignore still unignores retired .github/engineering.md")
+    return errors
 
 
-def check_opensource_files(root: Path, require_coc: bool = False) -> None:
+def check_docs_baseline(root: Path, private: bool = False, require_coc: bool = False) -> list[str]:
+    """Require community health files for public repos and SECURITY.md for private ones."""
+    errors: list[str] = []
+    if private:
+        if not (root / "SECURITY.md").is_file():
+            errors.append("private repository is missing SECURITY.md")
+        return errors
+
     for rel in REQUIRED_OPEN_SOURCE:
         if not (root / rel).is_file():
-            err(f"{rel} is missing; an open-source repository must ship it")
+            errors.append(f"{rel} is missing; an open-source repository must ship it")
     if require_coc and not (root / "CODE_OF_CONDUCT.md").is_file():
-        err("CODE_OF_CONDUCT.md is missing; an open-source repository must ship it")
-
+        errors.append("CODE_OF_CONDUCT.md is missing; an open-source repository must ship it")
     if not any((root / name).is_file() for name in ("LICENSE", "LICENSE.md", "LICENSE.txt")):
-        err("LICENSE is missing; an open-source repository must ship it")
+        errors.append("LICENSE is missing; an open-source repository must ship it")
 
     issue_dir = root / ".github" / "ISSUE_TEMPLATE"
     if not issue_dir.is_dir() or not any(issue_dir.iterdir()):
-        err(".github/ISSUE_TEMPLATE/ is missing or empty; add at least one issue form")
+        errors.append(".github/ISSUE_TEMPLATE/ is missing or empty; add at least one issue form")
+    return errors
 
 
-def check_docs_baseline(root: Path, private: bool = False, require_coc: bool = False) -> None:
-    """Require community health files for public repos and SECURITY.md for private ones."""
-    has_license = any((root / name).exists() for name in ("LICENSE", "LICENSE.md", "LICENSE.txt"))
-    if not private and has_license:
-        required = ["CONTRIBUTING.md", "SECURITY.md"]
-        if require_coc:
-            required.append("CODE_OF_CONDUCT.md")
-        kind = "public"
-    else:
-        required = ["SECURITY.md"]
-        kind = "private"
-    missing = [name for name in required if not (root / name).exists()]
-    if missing:
-        err(f"{kind} repository is missing {', '.join(missing)}")
+def run_checks(
+    root: Path, private: bool = False, require_coc: bool = False
+) -> tuple[list[str], list[str], list[str]]:
+    errors: list[str] = []
+    doc_warnings: list[str] = []
 
+    errors.extend(check_dirs(root))
+    for path in iter_files(root):
+        fn_errs, fn_warns = check_filename(root, path)
+        errors.extend(fn_errs)
+        doc_warnings.extend(fn_warns)
+        if path.suffix == ".md":
+            errors.extend(check_doc_type(root, path))
+            link_errs, link_warns = check_links(root, path)
+            errors.extend(link_errs)
+            doc_warnings.extend(link_warns)
+            doc_warnings.extend(check_paragraphs(root, path))
 
-SECRET_PATTERNS = [
-    (re.compile(r"ghp_[A-Za-z0-9]{20,}"), "GitHub PAT"),
-    (re.compile(r"gho_[A-Za-z0-9]{20,}"), "GitHub OAuth token"),
-    (re.compile(r"sk-[A-Za-z0-9]{32,}"), "API key"),
-    (re.compile(r"AKIA[0-9A-Z]{16}"), "AWS key"),
-    (re.compile(r"xox[baprs]-[A-Za-z0-9-]{20,}"), "Slack token"),
-    # Require base64 payload after the PEM header so header-only test fixtures stay valid.
-    (re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----\s*\n[A-Za-z0-9+/=]{40,}"), "private key"),
-]
-SYNTHETIC_SECRET_LITERALS = {"xoxb-1234567890-abcdefghij"}
+    errors.extend(check_readme_quality(root))
+    errors.extend(check_public_internal_artifacts(root, private=private))
+    agent_errs, agent_warns = check_agents(root)
+    errors.extend(agent_errs)
+    doc_warnings.extend(agent_warns)
 
+    pair_errs, pair_warns = check_bilingual_pair(root)
+    errors.extend(pair_errs)
+    doc_warnings.extend(pair_warns)
 
-def check_secrets(root: Path) -> None:
-    for p in iter_files(root):
-        if p.suffix in {".png", ".jpg", ".pdf", ".zip", ".jar", ".apk", ".so", ".dylib", ".lock"}:
-            continue
-        try:
-            text = p.read_text(encoding="utf-8", errors="ignore")
-        except OSError:
-            continue
-        for pat, label in SECRET_PATTERNS:
-            for m in pat.finditer(text):
-                if m.group(0) in SYNTHETIC_SECRET_LITERALS:
-                    continue
-                # Never echo the matched value into CI logs.
-                err(f"{p.relative_to(root)}: possible hardcoded {label} (value withheld)")
+    code_warnings = check_comment_language(root)
+    errors.extend(check_gitignore(root))
+    errors.extend(check_docs_baseline(root, private=private, require_coc=require_coc))
+
+    return errors, doc_warnings, code_warnings
 
 
 def main(argv: list[str] | None = None) -> int:
-    errors.clear()
-    warnings.clear()
-    doc_warnings.clear()
-
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--root", default=".", help="repository root")
     ap.add_argument("--strict", action="store_true", help="treat all warnings as failures")
@@ -575,36 +580,23 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     root = Path(args.root).resolve()
+    errors, doc_warnings, code_warnings = run_checks(
+        root, private=args.private, require_coc=args.require_coc
+    )
 
-    check_dirs(root)
-    for path in iter_files(root):
-        check_filename(root, path)
-        if path.suffix == ".md":
-            check_doc_type(root, path)
-            check_links(root, path)
-            check_paragraphs(root, path)
-    check_readme_quality(root)
-    check_public_internal_artifacts(root, private=args.private)
-    check_agents(root)
-    check_bilingual_pair(root)
-    check_comment_language(root)
-    check_gitignore(root)
-    if args.private:
-        check_docs_baseline(root, private=True, require_coc=args.require_coc)
-    else:
-        check_opensource_files(root, require_coc=args.require_coc)
-    check_secrets(root)
+    unique_errors = sorted(set(errors))
+    unique_warnings = sorted(set(doc_warnings) | set(code_warnings))
 
-    for w in sorted(set(warnings)):
+    for w in unique_warnings:
         print(f"warning  {w}")
-    for e in sorted(set(errors)):
+    for e in unique_errors:
         print(f"error    {e}")
 
-    print(f"\n{len(set(errors))} errors, {len(set(warnings))} warnings")
+    print(f"\n{len(unique_errors)} errors, {len(unique_warnings)} warnings")
 
-    if errors:
+    if unique_errors:
         return 1
-    if args.strict and warnings:
+    if args.strict and unique_warnings:
         return 1
     if args.strict_docs and doc_warnings:
         return 1
