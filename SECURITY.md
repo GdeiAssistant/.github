@@ -2,7 +2,9 @@
 
 ## Reporting a vulnerability
 
-Report security vulnerabilities through [GitHub Private Vulnerability Reporting](https://github.com/GdeiAssistant/.github/security/advisories/new) or the Security tab of the affected `GdeiAssistant` repository. Do not post exploit details, credentials, private sessions, or personal data in public issues or pull requests.
+Report security vulnerabilities privately through the Security tab (`Advisories -> New draft security advisory`) of the affected `GdeiAssistant` repository, or through [GitHub Private Vulnerability Reporting](https://github.com/GdeiAssistant/.github/security/advisories/new).
+
+If the private reporting form is unavailable, contact `private@gdeiassistant.cn`. Do not post exploit details, credentials, private sessions, or personal data in public issues or pull requests.
 
 ## 安全测试边界
 

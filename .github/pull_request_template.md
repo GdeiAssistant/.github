@@ -5,7 +5,9 @@
 ## 怎么验证的
 
 ```bash
-python3 scripts/check_hygiene.py --strict
+python3 scripts/test_hygiene.py
+python3 scripts/check_hygiene.py --strict --require-coc
+PYTHONPATH=scripts python3 -m unittest discover -s scripts -p "test_workflows.py"
 ```
 
 <!-- 记录实际执行的命令和结果；未执行的检查请说明原因。 -->

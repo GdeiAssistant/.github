@@ -20,7 +20,11 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.13"
+      - name: Install workflow checker dependency
+        run: python3 -m pip install --disable-pip-version-check -r scripts/requirements-ci.txt
       - name: Run hygiene checker unit tests
         run: python3 scripts/test_hygiene.py
       - name: Check repository hygiene
-        run: python3 scripts/check_hygiene.py --strict
+        run: python3 scripts/check_hygiene.py --strict --require-coc
+      - name: Run workflow checker unit tests
+        run: PYTHONPATH=scripts python3 -m unittest discover -s scripts -p "test_workflows.py"
