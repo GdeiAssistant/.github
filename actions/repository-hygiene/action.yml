@@ -1,0 +1,75 @@
+name: Repository hygiene
+description: Run shared documentation hygiene, workflow safety, and actionlint checks.
+inputs:
+  extra-hygiene-args:
+    description: Extra CLI flags forwarded to check_hygiene.py
+    required: false
+    default: "--strict-docs"
+  skip-workflow-entry-check:
+    description: Skip AGENTS.md/copilot/CODEOWNERS git-tracked check in check_workflows.py
+    required: false
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+      with:
+        python-version: '3.13'
+
+    - name: Verify hygiene checker regressions
+      shell: bash
+      run: |
+        set -euo pipefail
+        scripts_dir="$(cd "$GITHUB_ACTION_PATH/../../scripts" && pwd)"
+        python3 -m unittest discover -s "$scripts_dir" -p "test_hygiene.py"
+
+    - name: Check versioned instructions and repository hygiene
+      shell: bash
+      env:
+        EXTRA_ARGS: ${{ inputs.extra-hygiene-args }}
+      run: |
+        set -euo pipefail
+        scripts_dir="$(cd "$GITHUB_ACTION_PATH/../../scripts" && pwd)"
+        read -r -a extra_args <<< "${EXTRA_ARGS:-}"
+        python3 "$scripts_dir/check_hygiene.py" --root "$GITHUB_WORKSPACE" "${extra_args[@]}"
+
+    - name: Install workflow checker dependency
+      shell: bash
+      run: |
+        set -euo pipefail
+        scripts_dir="$(cd "$GITHUB_ACTION_PATH/../../scripts" && pwd)"
+        python3 -m pip install --disable-pip-version-check -r "$scripts_dir/requirements-ci.txt"
+
+    - name: Verify workflow safety regressions
+      shell: bash
+      run: |
+        set -euo pipefail
+        scripts_dir="$(cd "$GITHUB_ACTION_PATH/../../scripts" && pwd)"
+        PYTHONPATH="$scripts_dir" python3 -m unittest discover -s "$scripts_dir" -p "test_workflows.py"
+
+    - name: Check workflow safety
+      shell: bash
+      env:
+        SKIP_ENTRY_CHECK: ${{ inputs.skip-workflow-entry-check }}
+      run: |
+        set -euo pipefail
+        scripts_dir="$(cd "$GITHUB_ACTION_PATH/../../scripts" && pwd)"
+        cd "$GITHUB_WORKSPACE"
+        if [[ "${SKIP_ENTRY_CHECK:-false}" == "true" ]]; then
+          python3 "$scripts_dir/check_workflows.py" --skip-entry-check
+        else
+          python3 "$scripts_dir/check_workflows.py"
+        fi
+
+    - name: Check workflow syntax
+      shell: bash
+      run: |
+        set -euo pipefail
+        cd "$GITHUB_WORKSPACE"
+        archive="$RUNNER_TEMP/actionlint.tar.gz"
+        curl --fail --silent --show-error --location --retry 2 \
+          https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz -o "$archive"
+        printf '%s  %s\n' '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8' "$archive" | sha256sum --check
+        tar -xzf "$archive" -C "$RUNNER_TEMP" actionlint
+        "$RUNNER_TEMP/actionlint" -shellcheck= -pyflakes=

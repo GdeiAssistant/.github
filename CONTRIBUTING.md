@@ -10,7 +10,8 @@
 
 ```sh
 python3 scripts/test_hygiene.py
-python3 scripts/check_hygiene.py --strict
+python3 scripts/check_hygiene.py --strict --require-coc
+PYTHONPATH=scripts python3 -m unittest discover -s scripts -p "test_workflows.py"
 ```
 
 ## 提交与文档要求

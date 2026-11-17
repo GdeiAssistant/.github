@@ -2,9 +2,10 @@
 """Repository documentation, naming, anti-leak, and agent-file hygiene checker.
 
 Usage:
-    python scripts/check_hygiene.py            # check public repository
-    python scripts/check_hygiene.py --private  # check private repository
-    python scripts/check_hygiene.py --strict   # treat warnings as failures
+    python scripts/check_hygiene.py               # check public repository
+    python scripts/check_hygiene.py --private     # check private repository
+    python scripts/check_hygiene.py --strict-docs # treat doc warnings as failures
+    python scripts/check_hygiene.py --strict      # treat all warnings as failures
 
 Exit code 0 means pass, 1 means at least one blocking violation.
 """
@@ -114,20 +115,22 @@ MAX_AGENTS_LINES = 120
 REQUIRED_OPEN_SOURCE = [
     "CONTRIBUTING.md",
     "SECURITY.md",
-    "CODE_OF_CONDUCT.md",
     ".github/pull_request_template.md",
 ]
 
 errors: list[str] = []
 warnings: list[str] = []
+doc_warnings: list[str] = []
 
 
 def err(msg: str) -> None:
     errors.append(msg)
 
 
-def warn(msg: str) -> None:
+def warn(msg: str, kind: str = "doc") -> None:
     warnings.append(msg)
+    if kind == "doc":
+        doc_warnings.append(msg)
 
 
 def git_visible_files(root: Path) -> set[Path] | None:
@@ -395,7 +398,7 @@ def check_comment_language(root: Path) -> None:
         total = sum(n for _, n in offenders)
         offenders.sort(key=lambda x: -x[1])
         top = ", ".join(f"{f}({n})" for f, n in offenders[:5])
-        warn(f"{len(offenders)} files carry {total} lines of non-English comments; write new ones in English — worst: {top}")
+        warn(f"{len(offenders)} files carry {total} lines of non-English comments; write new ones in English — worst: {top}", kind="code")
 
 
 def check_paragraphs(root: Path, path: Path) -> None:
@@ -499,10 +502,12 @@ def check_gitignore(root: Path) -> None:
         err(".gitignore still unignores retired .github/engineering.md")
 
 
-def check_opensource_files(root: Path) -> None:
+def check_opensource_files(root: Path, require_coc: bool = False) -> None:
     for rel in REQUIRED_OPEN_SOURCE:
         if not (root / rel).is_file():
             err(f"{rel} is missing; an open-source repository must ship it")
+    if require_coc and not (root / "CODE_OF_CONDUCT.md").is_file():
+        err("CODE_OF_CONDUCT.md is missing; an open-source repository must ship it")
 
     if not any((root / name).is_file() for name in ("LICENSE", "LICENSE.md", "LICENSE.txt")):
         err("LICENSE is missing; an open-source repository must ship it")
@@ -512,11 +517,13 @@ def check_opensource_files(root: Path) -> None:
         err(".github/ISSUE_TEMPLATE/ is missing or empty; add at least one issue form")
 
 
-def check_docs_baseline(root: Path, private: bool = False) -> None:
+def check_docs_baseline(root: Path, private: bool = False, require_coc: bool = False) -> None:
     """Require community health files for public repos and SECURITY.md for private ones."""
     has_license = any((root / name).exists() for name in ("LICENSE", "LICENSE.md", "LICENSE.txt"))
     if not private and has_license:
-        required = ["CONTRIBUTING.md", "SECURITY.md", "CODE_OF_CONDUCT.md"]
+        required = ["CONTRIBUTING.md", "SECURITY.md"]
+        if require_coc:
+            required.append("CODE_OF_CONDUCT.md")
         kind = "public"
     else:
         required = ["SECURITY.md"]
@@ -557,10 +564,13 @@ def check_secrets(root: Path) -> None:
 def main(argv: list[str] | None = None) -> int:
     errors.clear()
     warnings.clear()
+    doc_warnings.clear()
 
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--root", default=".", help="repository root")
-    ap.add_argument("--strict", action="store_true", help="treat warnings as failures")
+    ap.add_argument("--strict", action="store_true", help="treat all warnings as failures")
+    ap.add_argument("--strict-docs", action="store_true", help="treat documentation warnings as failures while keeping code-comment warnings non-blocking")
+    ap.add_argument("--require-coc", action="store_true", help="require a local CODE_OF_CONDUCT.md instead of inheriting org defaults")
     ap.add_argument("--private", action="store_true", help="skip public-only OSS baseline and leak checks")
     args = ap.parse_args(argv)
 
@@ -580,9 +590,9 @@ def main(argv: list[str] | None = None) -> int:
     check_comment_language(root)
     check_gitignore(root)
     if args.private:
-        check_docs_baseline(root, private=True)
+        check_docs_baseline(root, private=True, require_coc=args.require_coc)
     else:
-        check_opensource_files(root)
+        check_opensource_files(root, require_coc=args.require_coc)
     check_secrets(root)
 
     for w in sorted(set(warnings)):
@@ -595,6 +605,8 @@ def main(argv: list[str] | None = None) -> int:
     if errors:
         return 1
     if args.strict and warnings:
+        return 1
+    if args.strict_docs and doc_warnings:
         return 1
     return 0
 
