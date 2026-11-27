@@ -35,8 +35,9 @@ CONVENTIONAL_ANYWHERE = {
     "CHANGELOG.md",
     "AGENTS.md",
     "CLAUDE.md",
+    "GEMINI.md",
 }
-CONVENTIONAL_ROOT_ONLY = {"CLAUDE.md", "LICENSE"}
+CONVENTIONAL_ROOT_ONLY = {"CLAUDE.md", "GEMINI.md", "LICENSE"}
 
 SKIP_DIRS = {
     ".git", "node_modules", ".venv", "venv", "__pycache__",
@@ -495,6 +496,12 @@ def check_agents(root: Path) -> tuple[list[str], list[str]]:
         content = claude.read_text(encoding="utf-8", errors="ignore").strip()
         if content != "@AGENTS.md":
             errors.append("CLAUDE.md must be the single line @AGENTS.md, not a copy of the AGENTS.md body")
+
+    gemini = root / "GEMINI.md"
+    if gemini.exists():
+        content = gemini.read_text(encoding="utf-8", errors="ignore").strip()
+        if content != "@AGENTS.md":
+            errors.append("GEMINI.md must be the single line @AGENTS.md, not a copy of the AGENTS.md body")
 
     return errors, warnings
 

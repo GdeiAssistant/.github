@@ -262,6 +262,16 @@ class AgentInstructionsTest(unittest.TestCase):
         errors, _ = hygiene.check_agents(self.root)
         self.assertEqual(errors, [])
 
+    def test_gemini_pointer_validation(self):
+        (self.root / "GEMINI.md").write_text("@AGENTS.md\n", encoding="utf-8")
+        self.git("add", "AGENTS.md", "CLAUDE.md", "GEMINI.md")
+        errors, _ = hygiene.check_agents(self.root)
+        self.assertEqual(errors, [])
+
+        (self.root / "GEMINI.md").write_text("# Copied body\n", encoding="utf-8")
+        errors, _ = hygiene.check_agents(self.root)
+        self.assertTrue(any("GEMINI.md must be the single line @AGENTS.md" in e for e in errors))
+
     def test_missing_claude_entry_is_reported(self):
         (self.root / "CLAUDE.md").unlink()
         self.git("add", "AGENTS.md")
